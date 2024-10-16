@@ -8,10 +8,11 @@
 #include <vector>
 #include <omp.h>
 
-// Объявление CUDA-функции для суммирования элементов вектора на GPU
+// РћР±СЉСЏРІР»РµРЅРёРµ CUDA-С„СѓРЅРєС†РёР№ РґР»СЏ СЃСѓРјРјРёСЂРѕРІР°РЅРёСЏ СЌР»РµРјРµРЅС‚РѕРІ РІРµРєС‚РѕСЂР° РЅР° GPU
 void sumVectorGPU(const int* vector, int* result, int size);
+void sumVectorGPUReduction(const int* vector, int* result, int size);
 
-// Функция для последовательного суммирования элементов вектора на CPU
+// Р¤СѓРЅРєС†РёСЏ РґР»СЏ РїРѕСЃР»РµРґРѕРІР°С‚РµР»СЊРЅРѕРіРѕ СЃСѓРјРјРёСЂРѕРІР°РЅРёСЏ СЌР»РµРјРµРЅС‚РѕРІ РІРµРєС‚РѕСЂР° РЅР° CPU
 int sumVectorCPU(const int* vector, int size) {
     int sum = 0;
     for (int i = 0; i < size; i++) {
@@ -20,7 +21,7 @@ int sumVectorCPU(const int* vector, int size) {
     return sum;
 }
 
-// Многопоточная функция для суммирования вектора на CPU с использованием 2 потоков
+// РњРЅРѕРіРѕРїРѕС‚РѕС‡РЅР°СЏ С„СѓРЅРєС†РёСЏ РґР»СЏ СЃСѓРјРјРёСЂРѕРІР°РЅРёСЏ РІРµРєС‚РѕСЂР° РЅР° CPU СЃ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёРµРј 2 РїРѕС‚РѕРєРѕРІ
 int sumVectorCPUMultithreaded(const int* vector, int size) {
     int total_sum = 0;
 
@@ -33,20 +34,21 @@ int sumVectorCPUMultithreaded(const int* vector, int size) {
 
 void generateRandomVector(int* vector, int size) {
     for (int i = 0; i < size; i++) {
-        vector[i] = rand() % 10;  
+       // vector[i] = rand() % 10;  
+        vector[i] = 1;
     }
 }
 int main() {
     setlocale(LC_ALL, "Russian");
 
-    const int initial_size = 0;  // Начальный размер вектора
-    const int step_size = 200000;      // Шаг увеличения
-    const int num_tests = 11;         // Количество тестов
-    const int max_size = initial_size + (num_tests - 1) * step_size; 
+    const int initial_size = 0;  // РќР°С‡Р°Р»СЊРЅС‹Р№ СЂР°Р·РјРµСЂ РІРµРєС‚РѕСЂР°
+    const int step_size = 100000; // РЁР°Рі СѓРІРµР»РёС‡РµРЅРёСЏ
+    const int num_tests = 11;     // РљРѕР»РёС‡РµСЃС‚РІРѕ С‚РµСЃС‚РѕРІ
+    const int max_size = initial_size + (num_tests - 1) * step_size;
 
     srand(static_cast<unsigned>(time(0)));
     std::ofstream results("results.csv");
-    results << "Vector Size, CPU Time (s), CPU Multithreaded Time (s), GPU Time (s), Speedup CPU/Multithreaded, Speedup CPU/GPU\n";
+    results << "Vector Size, CPU Time (s), CPU Multithreaded Time (s), GPU Atomic Time (s), GPU Reduction Time (s), Speedup CPU/Multithreaded, Speedup CPU/GPU Atomic, Speedup CPU/GPU Reduction\n";
 
     for (int test = 0; test < num_tests; ++test) {
         int vector_size = initial_size + test * step_size;
@@ -54,43 +56,55 @@ int main() {
         generateRandomVector(vector, vector_size);
         int cpu_result = 0;
         int cpu_multithreaded_result = 0;
-        int gpu_result = 0;
+        int gpu_atomic_result = 0;
+        int gpu_reduction_result = 0;
 
-        // Суммирование на CPU (последовательное)
+        // РЎСѓРјРјРёСЂРѕРІР°РЅРёРµ РЅР° CPU (РїРѕСЃР»РµРґРѕРІР°С‚РµР»СЊРЅРѕРµ)
         auto start_cpu = std::chrono::high_resolution_clock::now();
         cpu_result = sumVectorCPU(vector, vector_size);
         auto end_cpu = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> duration_cpu = end_cpu - start_cpu;
 
-        // Суммирование на CPU (многопоточное)
+        // РЎСѓРјРјРёСЂРѕРІР°РЅРёРµ РЅР° CPU (РјРЅРѕРіРѕРїРѕС‚РѕС‡РЅРѕРµ)
         auto start_cpu_mt = std::chrono::high_resolution_clock::now();
         cpu_multithreaded_result = sumVectorCPUMultithreaded(vector, vector_size);
         auto end_cpu_mt = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> duration_cpu_mt = end_cpu_mt - start_cpu_mt;
 
-        // Суммирование на GPU
-        auto start_gpu = std::chrono::high_resolution_clock::now();
-        sumVectorGPU(vector, &gpu_result, vector_size);
-        auto end_gpu = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> duration_gpu = end_gpu - start_gpu;
-        if (vector_size > 1) {
-            // Вычисление ускорения
-            double speedup_cpu_multithreaded = duration_cpu.count() / duration_cpu_mt.count();
-            double speedup_cpu_gpu = duration_cpu.count() / duration_gpu.count();
-            
-            results << vector_size << ","
-                << duration_cpu.count()  << ","
-                << duration_cpu_mt.count()  << ","
-                << duration_gpu.count()  << ","
-                << speedup_cpu_multithreaded << ","
-                << speedup_cpu_gpu << "\n";
+        // РЎСѓРјРјРёСЂРѕРІР°РЅРёРµ РЅР° GPU (СЃ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёРµРј atomicAdd)
+        auto start_gpu_atomic = std::chrono::high_resolution_clock::now();
+        sumVectorGPU(vector, &gpu_atomic_result, vector_size);
+        auto end_gpu_atomic = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> duration_gpu_atomic = end_gpu_atomic - start_gpu_atomic;
 
-            // Проверка корректности
-            if (cpu_result == gpu_result && cpu_multithreaded_result == gpu_result) {
-               // std::cout << "Результаты на CPU, многопоточном CPU и GPU совпадают! Сумма = " << cpu_result << std::endl;
+        // РЎСѓРјРјРёСЂРѕРІР°РЅРёРµ РЅР° GPU (СЃ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёРµРј СЂРµРґСѓРєС†РёРё)
+        auto start_gpu_reduction = std::chrono::high_resolution_clock::now();
+        sumVectorGPUReduction(vector, &gpu_reduction_result, vector_size);
+        auto end_gpu_reduction = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> duration_gpu_reduction = end_gpu_reduction - start_gpu_reduction;
+
+        if (vector_size > 1) {
+            // Р’С‹С‡РёСЃР»РµРЅРёРµ СѓСЃРєРѕСЂРµРЅРёСЏ
+            double speedup_cpu_multithreaded = duration_cpu.count() / duration_cpu_mt.count();
+            double speedup_cpu_gpu_atomic = duration_cpu.count() / duration_gpu_atomic.count();
+            double speedup_cpu_gpu_reduction = duration_cpu.count() / duration_gpu_reduction.count();
+
+            results << vector_size << ","
+                << duration_cpu.count() << ","
+                << duration_cpu_mt.count() << ","
+                << duration_gpu_atomic.count() << ","
+                << duration_gpu_reduction.count() << ","
+                << speedup_cpu_multithreaded << ","
+                << speedup_cpu_gpu_atomic << ","
+                << speedup_cpu_gpu_reduction << "\n";
+
+            // РџСЂРѕРІРµСЂРєР° РєРѕСЂСЂРµРєС‚РЅРѕСЃС‚Рё
+            if (cpu_result == gpu_atomic_result && cpu_multithreaded_result == gpu_atomic_result && cpu_result == gpu_reduction_result) {
+                // std::cout << "Р РµР·СѓР»СЊС‚Р°С‚С‹ РЅР° CPU, РјРЅРѕРіРѕРїРѕС‚РѕС‡РЅРѕРј CPU, GPU (atomic) Рё GPU (reduction) СЃРѕРІРїР°РґР°СЋС‚! РЎСѓРјРјР° = " << cpu_result << std::endl;
             }
             else {
-                std::cout << "Результаты на CPU, многопоточном CPU и GPU не совпадают!" << std::endl;
+                std::cout << "Р РµР·СѓР»СЊС‚Р°С‚С‹ РЅР° CPU, РјРЅРѕРіРѕРїРѕС‚РѕС‡РЅРѕРј CPU, GPU (atomic) Рё GPU (reduction) РЅРµ СЃРѕРІРїР°РґР°СЋС‚!" << std::endl;
+                std::cout << cpu_result << "  " << gpu_atomic_result << "  " << cpu_multithreaded_result << "  " << gpu_reduction_result << std::endl;
             }
         }
         delete[] vector;
@@ -99,5 +113,3 @@ int main() {
     results.close();
     return 0;
 }
-
-
